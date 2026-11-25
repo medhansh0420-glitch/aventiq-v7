@@ -1,0 +1,8 @@
+requests>=2.32,<3
+feedparser>=6.0,<7
+beautifulsoup4>=4.12,<5
+python-dateutil>=2.9,<3
+supabase>=2.13,<3
+openai>=1.60,<2
+pydantic>=2.10,<3
+pytest>=8,<9

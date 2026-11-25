@@ -1,0 +1,2 @@
+import {NextResponse} from 'next/server';import {requireStaff} from '@/lib/auth/guards';
+export async function GET(){const {db,response}=await requireStaff();if(response)return response;const {data,error}=await db.from('verification_logs').select('*,opportunities(title,organization)').order('checked_at',{ascending:false}).limit(200);if(error)return NextResponse.json({error:'Could not load verification logs'},{status:503});return NextResponse.json({data:data||[]});}

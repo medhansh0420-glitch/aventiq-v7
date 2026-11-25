@@ -1,0 +1,2 @@
+import {NextResponse} from 'next/server';import {requireStaff} from '@/lib/auth/guards';
+export async function GET(){const {db,response}=await requireStaff();if(response)return response;const {data,error}=await db.from('consultations').select('id,mentor_id,student_id,topic,starts_at,duration_minutes,status,created_at').in('status',['requested','accepted']).order('starts_at').limit(100);if(error)return NextResponse.json({error:'Could not load consultations'},{status:503});return NextResponse.json({data:data||[]});}

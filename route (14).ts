@@ -1,0 +1,2 @@
+import {NextResponse} from 'next/server';import {requireStaff} from '@/lib/auth/guards';
+export async function GET(){const {db,response}=await requireStaff();if(response)return response;const {data,error}=await db.from('discovery_runs').select('*,opportunity_sources(name,url)').order('created_at',{ascending:false}).limit(100);if(error)return NextResponse.json({error:'Could not load scan history'},{status:503});return NextResponse.json({data:data||[]});}

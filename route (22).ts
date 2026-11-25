@@ -1,0 +1,4 @@
+import {NextResponse} from 'next/server';import {z} from 'zod';import {requireStaff} from '@/lib/auth/guards';
+export async function POST(_req:Request,ctx:{params:Promise<{id:string}>}){const {db,user,response}=await requireStaff();if(response||!user)return response!;const {id}=await ctx.params;if(!z.string().uuid().safeParse(id).success)return NextResponse.json({error:'Invalid opportunity id'},{status:400});
+const {error}=await db.from('opportunities').update({status:'rejected',updated_at:new Date().toISOString()}).eq('id',id);if(error)return NextResponse.json({error:'Could not reject opportunity'},{status:400});await db.from('admin_reviews').insert({opportunity_id:id,reviewer_id:user.id,decision:'rejected'});
+await db.from('audit_logs').insert({actor_id:user.id,action:'reject_opportunity',entity_type:'opportunity',entity_id:id});return NextResponse.json({ok:true});}
