@@ -1,4 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server';import { z } from 'zod';import { createSupabaseServerClient } from '@/lib/supabase/server';import { requireUser } from '@/lib/auth/guards';
-const profileSchema=z.object({display_name:z.string().trim().min(2).max(80),headline:z.string().trim().max(140).optional(),bio:z.string().trim().max(2000).optional(),country:z.string().trim().max(80).optional(),avatar_url:z.string().url().max(500).optional().or(z.literal('')),portfolio_url:z.string().url().max(500).optional().or(z.literal('')),skills:z.array(z.string().trim().min(1).max(40)).max(20).optional(),guidance_topics:z.array(z.string().trim().min(1).max(80)).max(20).optional(),is_public:z.boolean().default(false),role:z.enum(['student','mentor']).default('student')});
-export async function GET(req:NextRequest){const q=(req.nextUrl.searchParams.get('q')||'').trim().slice(0,80).replace(/[^a-zA-Z0-9 \-]/g,' ');const pageRaw=Number(req.nextUrl.searchParams.get('page')||1),limitRaw=Number(req.nextUrl.searchParams.get('limit')||40);const page=Number.isFinite(pageRaw)?Math.max(1,Math.min(10000,pageRaw)):1;const limit=Number.isFinite(limitRaw)?Math.max(1,Math.min(100,limitRaw)):40;try{const db=await createSupabaseServerClient();const cols='id,display_name,headline,bio,country,avatar_url,portfolio_url,skills,guidance_topics,role,created_at';let query=db.from('public_profiles').select(cols,{count:'exact'}).order('created_at',{ascending:false});if(q)query=query.or(`display_name.ilike.%${q}%,headline.ilike.%${q}%,bio.ilike.%${q}%,country.ilike.%${q}%`);const from=(page-1)*limit;const {data,error,count}=await query.range(from,from+limit-1);if(error)throw error;return NextResponse.json({data:data||[],pagination:{page,limit,total:count||0,has_more:(count||0)>from+limit}});}catch(e){console.error('profiles GET',e);return NextResponse.json({error:'Profile service unavailable; configure Supabase and apply migrations.'},{status:503});}}
-export async function POST(req:NextRequest){const {db,user,response}=await requireUser();if(response||!user)return response!;const parsed=profileSchema.safeParse(await req.json().catch(()=>null));if(!parsed.success)return NextResponse.json({error:'Invalid profile',details:parsed.error.flatten()},{status:400});const p=parsed.data;const {error:ensureError}=await db.rpc('ensure_own_profile',{p_display_name:p.display_name});if(ensureError)return NextResponse.json({error:'Could not initialize profile'},{status:400});const {data,error}=await db.from('profiles').update({...p,avatar_url:p.avatar_url||null,portfolio_url:p.portfolio_url||null,updated_at:new Date().toISOString()}).eq('id',user.id).select('id,display_name,headline,bio,country,avatar_url,portfolio_url,skills,guidance_topics,role,is_public').single();if(error){console.error(error);return NextResponse.json({error:'Could not save profile'},{status:400});}return NextResponse.json({data});}
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+
+const idSchema = z.string().uuid();
+export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  if (!idSchema.safeParse(id).success) return NextResponse.json({ error: 'Invalid opportunity id' }, { status: 400 });
+  try {
+    const db = await createSupabaseServerClient();
+    const { data, error } = await db.from('opportunities').select('id,legacy_id,title,description,organization,category,subcategory,location,country,eligibility,target_audience,funding_amount,benefits,start_date,deadline,application_url,official_source_url,status,last_verified_at,published_at').eq('id', id).eq('status', 'published').maybeSingle();
+    if (error) throw error;
+    if (!data) return NextResponse.json({ error: 'Opportunity not found' }, { status: 404 });
+    return NextResponse.json({ data });
+  } catch (error) {
+    console.error('GET /api/opportunities/[id]', error);
+    return NextResponse.json({ error: 'Opportunity service is not configured or temporarily unavailable' }, { status: 503 });
+  }
+}
+
+export async function PATCH(req:Request,context:{params:Promise<{id:string}>}){
+ const {requireStaff}=await import('@/lib/auth/guards');const {db,user,response}=await requireStaff();if(response||!user)return response!;
+ const {id}=await context.params;if(!idSchema.safeParse(id).success)return NextResponse.json({error:'Invalid opportunity id'},{status:400});
+ const schema=z.object({title:z.string().trim().min(3).max(250).optional(),description:z.string().max(8000).nullable().optional(),organization:z.string().max(200).nullable().optional(),category:z.string().max(100).nullable().optional(),deadline:z.string().nullable().optional(),application_url:z.string().url().nullable().optional(),official_source_url:z.string().url().nullable().optional()});
+ const p=schema.safeParse(await req.json().catch(()=>null));if(!p.success)return NextResponse.json({error:'Invalid opportunity fields'},{status:400});
+ const {data,error}=await db.from('opportunities').update({...p.data,updated_at:new Date().toISOString()}).eq('id',id).select('*').single();if(error)return NextResponse.json({error:'Could not update opportunity'},{status:400});return NextResponse.json({data});
+}
